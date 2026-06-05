@@ -1,0 +1,44 @@
+# ---- Gradle ----------------------------------------------------------------
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin compiler/daemon working directory
+.kotlin/
+
+# ---- IDE: IntelliJ IDEA / Android Studio ----------------------------------
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# Android Studio / local Gradle config (SDK path, secrets)
+local.properties
+
+# ---- Claude Code local config ----------------------------------------------
+.claude/
+
+# ---- Logs & temp -----------------------------------------------------------
+*.log
+*.hprof
+
+# ---- OS --------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+
+# ---- Android ---------------------------------------------------------------
+captures/
+.externalNativeBuild/
+.cxx/
+*.aab
+*.apk
+output-metadata.json
+
+# Keystore files
+*.jks
+*.keystore
+
+# Google Services (e.g. APIs or Firebase)
+google-services.json
