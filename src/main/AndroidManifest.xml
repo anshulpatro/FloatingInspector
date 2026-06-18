@@ -7,11 +7,6 @@
         <service
             android:name="com.anshulpatro.floatinginspector.DebugOverlayService"
             android:exported="false" />
-
-        <provider
-            android:name="com.anshulpatro.floatinginspector.FloatingInspectorInitProvider"
-            android:authorities="${applicationId}.floatinginspectorinit"
-            android:exported="false" />
     </application>
 
 </manifest>
