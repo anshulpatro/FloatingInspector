@@ -51,6 +51,8 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
     private val searchInput: EditText
     private val matchCount: TextView
     private val clearButton: ImageView
+    private val prevButton: ImageView
+    private val nextButton: ImageView
     private val searchRow: LinearLayout
     private val searchIcon: ImageView
     private val badge: TextView
@@ -77,6 +79,8 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         searchInput = buildSearchInput()
         matchCount = buildMatchCount()
         clearButton = buildClearButton()
+        prevButton = buildNavIcon(R.drawable.debug_overlay_ic_arrow_up) { goToMatch(adapter.previousMatch()) }
+        nextButton = buildNavIcon(R.drawable.debug_overlay_ic_arrow_down) { goToMatch(adapter.nextMatch()) }
         searchIcon = buildBarIcon(R.drawable.debug_overlay_ic_search)
         searchRow = buildSearchRow()
         panel = buildPanel(listView, searchRow)
@@ -98,8 +102,11 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
             items.removeAt(0)
         }
         adapter.refresh()
-        updateMatchCount()
-        scrollToBottom()
+        if (searchOpen) {
+            updateMatchCount()
+        } else {
+            scrollToBottom()
+        }
         if (minimised) {
             unseenCount++
             updateBadge()
@@ -165,6 +172,8 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         searchOpen = true
         searchRow.visibility = View.VISIBLE
         searchIcon.setColorFilter(COLOR_ACCENT)
+        // Stop auto-scrolling to the bottom so navigating between matches isn't yanked away.
+        listView.transcriptMode = AbsListView.TRANSCRIPT_MODE_DISABLED
         searchInput.requestFocus()
         post { showKeyboard(searchInput) }
     }
@@ -174,13 +183,23 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         searchInput.setText("")     // clears the query via the TextWatcher
         searchRow.visibility = View.GONE
         searchIcon.setColorFilter(Color.WHITE)
+        listView.transcriptMode = AbsListView.TRANSCRIPT_MODE_ALWAYS_SCROLL
         hideKeyboard()
+        scrollToBottom()
     }
 
     private fun applySearch(query: String) {
         adapter.setQuery(query)
         updateMatchCount()
-        scrollToBottom()
+        goToMatch(adapter.currentMatchPosition)
+    }
+
+    /** Scrolls the focused match into view, a little below the search bar. */
+    private fun goToMatch(position: Int) {
+        if (position >= 0) {
+            listView.setSelectionFromTop(position, dp(8))
+        }
+        updateMatchCount()
     }
 
     private fun updateMatchCount() {
@@ -188,10 +207,15 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
             matchCount.visibility = View.GONE
             return
         }
-        val count = adapter.count
         matchCount.visibility = View.VISIBLE
-        matchCount.text = if (count == 0) "no matches" else "$count"
-        matchCount.setTextColor(if (count == 0) COLOR_NO_MATCH else COLOR_MATCH_COUNT)
+        val total = adapter.matchTotal
+        if (total == 0) {
+            matchCount.text = "0/0"
+            matchCount.setTextColor(COLOR_NO_MATCH)
+        } else {
+            matchCount.text = "${adapter.currentOrdinal}/$total"
+            matchCount.setTextColor(COLOR_MATCH_COUNT)
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -287,7 +311,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         return bar
     }
 
-    /** A rounded "pill" containing: leading icon · input · match count · clear button. */
+    /** Row: [ solid pill: leading icon · input · count · clear ] [ prev ] [ next ]. */
     private fun buildSearchRow(): LinearLayout {
         val field = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -320,15 +344,12 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
 
         return LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(12), dp(2), dp(12), dp(8))
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), dp(2), dp(8), dp(8))
             visibility = View.GONE
-            addView(
-                field,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    dp(40)
-                )
-            )
+            addView(field, LinearLayout.LayoutParams(0, dp(40), 1f))
+            addView(prevButton, navIconParams())
+            addView(nextButton, navIconParams())
         }
     }
 
@@ -347,7 +368,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         }
         setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                hideKeyboard()
+                goToMatch(adapter.nextMatch())
                 true
             } else {
                 false
@@ -383,6 +404,18 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
             showKeyboard(searchInput)
         }
     }
+
+    private fun buildNavIcon(resId: Int, onClick: () -> Unit): ImageView = ImageView(context).apply {
+        setImageResource(resId)
+        setColorFilter(Color.WHITE)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        val pad = dp(5)
+        setPadding(pad, pad, pad, pad)
+        setOnClickListener { onClick() }
+    }
+
+    private fun navIconParams(): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginStart = dp(2) }
 
     private fun buildBarIcon(resId: Int): ImageView = ImageView(context).apply {
         setImageResource(resId)
@@ -521,9 +554,9 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         private val COLOR_BUBBLE = 0xCC000000.toInt()
         private const val COLOR_DIVIDER = 0x26FFFFFF
         private val COLOR_BADGE = 0xFFFF3B30.toInt()
-        private val COLOR_SEARCH_FIELD = 0x26FFFFFF
+        private val COLOR_SEARCH_FIELD = 0xFF2C2C2E.toInt()
         private val COLOR_HINT = 0x80FFFFFF.toInt()
-        private val COLOR_MATCH_COUNT = 0xB3FFFFFF.toInt()
+        private val COLOR_MATCH_COUNT = 0xE6FFFFFF.toInt()
         private val COLOR_NO_MATCH = 0xFFFF6B6B.toInt()
         private val COLOR_ACCENT = 0xFF4FC3F7.toInt()
         private const val MAX_MESSAGES = 200

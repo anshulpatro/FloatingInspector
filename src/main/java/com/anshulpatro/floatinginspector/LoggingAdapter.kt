@@ -15,53 +15,86 @@ import android.widget.TextView
 
 class LoggingAdapter(context: Context) : SimpleAdapter<String>(context) {
 
-    /** Current search query; empty means "show everything". */
+    /** Current search query; empty means "no search active". */
     var query: String = ""
         private set
 
-    /** The messages currently shown — all of [items], or only those matching [query]. */
-    private val visible = ArrayList<String>()
+    /** Positions in [items] whose text contains [query]. */
+    private val matches = ArrayList<Int>()
+
+    /** Index into [matches] of the focused match, or -1 when there are none. */
+    private var currentMatch = -1
+
+    /** Total number of matching entries. */
+    val matchTotal: Int get() = matches.size
+
+    /** 1-based ordinal of the focused match, or 0 when there are none. */
+    val currentOrdinal: Int get() = if (currentMatch < 0) 0 else currentMatch + 1
+
+    /** Position in [items] of the focused match, or -1 when there are none. */
+    val currentMatchPosition: Int
+        get() = if (currentMatch in matches.indices) matches[currentMatch] else -1
 
     fun setQuery(value: String) {
         query = value.trim()
-        refresh()
+        recomputeMatches(resetPosition = true)
     }
 
-    /** Recompute the visible list from [items] and [query]. Call after [items] changes. */
-    fun refresh() {
-        visible.clear()
-        if (query.isEmpty()) {
-            visible.addAll(items)
-        } else {
-            for (item in items) {
-                if (plainText(item).contains(query, ignoreCase = true)) {
-                    visible.add(item)
-                }
+    /** Recompute matches after [items] changed; keeps the focused match when possible. */
+    fun refresh() = recomputeMatches(resetPosition = false)
+
+    /** Advances to the next match (wrapping) and returns its position in [items], or -1. */
+    fun nextMatch(): Int {
+        if (matches.isEmpty()) return -1
+        currentMatch = (currentMatch + 1) % matches.size
+        notifyDataSetChanged()
+        return currentMatchPosition
+    }
+
+    /** Steps to the previous match (wrapping) and returns its position in [items], or -1. */
+    fun previousMatch(): Int {
+        if (matches.isEmpty()) return -1
+        currentMatch = (currentMatch - 1 + matches.size) % matches.size
+        notifyDataSetChanged()
+        return currentMatchPosition
+    }
+
+    private fun recomputeMatches(resetPosition: Boolean) {
+        matches.clear()
+        if (query.isNotEmpty()) {
+            items.forEachIndexed { index, item ->
+                if (plainText(item).contains(query, ignoreCase = true)) matches.add(index)
             }
+        }
+        currentMatch = when {
+            matches.isEmpty() -> -1
+            resetPosition -> 0
+            else -> currentMatch.coerceIn(0, matches.size - 1)
         }
         notifyDataSetChanged()
     }
-
-    override fun getCount(): Int = visible.size
-
-    override fun getItem(position: Int): String = visible[position]
 
     override fun newView(type: Int, parent: ViewGroup): View =
         inflater.inflate(R.layout.debug_overlay_item_logmsg, parent, false)
 
     override fun bindView(position: Int, type: Int, view: View) {
         val tv = view as TextView
-        val spanned = fromHtml(visible[position])
-        tv.text = if (query.isEmpty()) spanned else highlight(spanned, query)
+        val spanned = fromHtml(items[position])
+        tv.text = if (query.isEmpty()) {
+            spanned
+        } else {
+            highlight(spanned, query, isCurrent = position == currentMatchPosition)
+        }
     }
 
-    private fun highlight(spanned: Spanned, needle: String): CharSequence {
+    private fun highlight(spanned: Spanned, needle: String, isCurrent: Boolean): CharSequence {
         val builder = SpannableStringBuilder(spanned)
         val haystack = spanned.toString()
+        val background = if (isCurrent) HIGHLIGHT_CURRENT else HIGHLIGHT_BG
         var index = haystack.indexOf(needle, ignoreCase = true)
         while (index >= 0) {
             val end = index + needle.length
-            builder.setSpan(BackgroundColorSpan(HIGHLIGHT_BG), index, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
+            builder.setSpan(BackgroundColorSpan(background), index, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             builder.setSpan(ForegroundColorSpan(HIGHLIGHT_FG), index, end, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE)
             index = haystack.indexOf(needle, end, ignoreCase = true)
         }
@@ -79,7 +112,8 @@ class LoggingAdapter(context: Context) : SimpleAdapter<String>(context) {
         }
 
     private companion object {
-        val HIGHLIGHT_BG = 0xFFFFEB3B.toInt()
+        val HIGHLIGHT_BG = 0xFFFFEB3B.toInt()       // every match — yellow
+        val HIGHLIGHT_CURRENT = 0xFFFF9800.toInt()  // focused match — orange
         val HIGHLIGHT_FG = Color.BLACK
     }
 }
