@@ -50,7 +50,9 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
     private val listView: ListView
     private val searchInput: EditText
     private val matchCount: TextView
+    private val clearButton: ImageView
     private val searchRow: LinearLayout
+    private val searchIcon: ImageView
     private val badge: TextView
     private val bubble: FrameLayout
     private val panel: LinearLayout
@@ -74,7 +76,9 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         listView = buildListView()
         searchInput = buildSearchInput()
         matchCount = buildMatchCount()
-        searchRow = buildSearchRow(searchInput, matchCount)
+        clearButton = buildClearButton()
+        searchIcon = buildBarIcon(R.drawable.debug_overlay_ic_search)
+        searchRow = buildSearchRow()
         panel = buildPanel(listView, searchRow)
         badge = buildBadge()
         bubble = buildBubble(badge)
@@ -160,6 +164,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
     private fun openSearch() {
         searchOpen = true
         searchRow.visibility = View.VISIBLE
+        searchIcon.setColorFilter(COLOR_ACCENT)
         searchInput.requestFocus()
         post { showKeyboard(searchInput) }
     }
@@ -168,6 +173,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         searchOpen = false
         searchInput.setText("")     // clears the query via the TextWatcher
         searchRow.visibility = View.GONE
+        searchIcon.setColorFilter(Color.WHITE)
         hideKeyboard()
     }
 
@@ -180,10 +186,12 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
     private fun updateMatchCount() {
         if (adapter.query.isEmpty()) {
             matchCount.visibility = View.GONE
-        } else {
-            matchCount.visibility = View.VISIBLE
-            matchCount.text = adapter.count.toString()
+            return
         }
+        val count = adapter.count
+        matchCount.visibility = View.VISIBLE
+        matchCount.text = if (count == 0) "no matches" else "$count"
+        matchCount.setTextColor(if (count == 0) COLOR_NO_MATCH else COLOR_MATCH_COUNT)
     }
 
     @Suppress("DEPRECATION")
@@ -265,9 +273,8 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
             }
         bar.addView(title, titleParams)
 
-        val search = buildBarIcon(R.drawable.debug_overlay_ic_search)
-        search.setOnClickListener { toggleSearch() }
-        bar.addView(search, barIconParams(dp(2)))
+        searchIcon.setOnClickListener { toggleSearch() }
+        bar.addView(searchIcon, barIconParams(dp(2)))
 
         val minimise = buildBarIcon(R.drawable.debug_overlay_ic_arrow_down)
         minimise.setOnClickListener { collapse() }
@@ -280,15 +287,60 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         return bar
     }
 
+    /** A rounded "pill" containing: leading icon · input · match count · clear button. */
+    private fun buildSearchRow(): LinearLayout {
+        val field = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(COLOR_SEARCH_FIELD)
+            }
+            setPadding(dp(10), dp(2), dp(6), dp(2))
+        }
+
+        val leading = ImageView(context).apply {
+            setImageResource(R.drawable.debug_overlay_ic_search)
+            setColorFilter(COLOR_HINT)
+            scaleType = ImageView.ScaleType.FIT_CENTER
+        }
+        field.addView(leading, LinearLayout.LayoutParams(dp(16), dp(16)).apply { marginEnd = dp(8) })
+        field.addView(
+            searchInput,
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        field.addView(
+            matchCount,
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginStart = dp(8) }
+        )
+        field.addView(clearButton, LinearLayout.LayoutParams(dp(22), dp(22)).apply { marginStart = dp(4) })
+
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(12), dp(2), dp(12), dp(8))
+            visibility = View.GONE
+            addView(
+                field,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    dp(40)
+                )
+            )
+        }
+    }
+
     private fun buildSearchInput(): EditText = EditText(context).apply {
         hint = "Search logs"
-        setHintTextColor(0x80FFFFFF.toInt())
+        setHintTextColor(COLOR_HINT)
         setTextColor(Color.WHITE)
         textSize = 13f
         setSingleLine()
+        minHeight = 0
         setBackgroundColor(Color.TRANSPARENT)
-        val padV = dp(6)
-        setPadding(0, padV, 0, padV)
+        setPadding(0, dp(4), 0, dp(4))
         imeOptions = EditorInfo.IME_ACTION_SEARCH
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
@@ -305,35 +357,32 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
-                applySearch(s?.toString().orEmpty())
+                val text = s?.toString().orEmpty()
+                clearButton.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
+                applySearch(text)
             }
         })
     }
 
     private fun buildMatchCount(): TextView = TextView(context).apply {
-        setTextColor(0xB3FFFFFF.toInt())
+        setTextColor(COLOR_MATCH_COUNT)
         textSize = 12f
         visibility = View.GONE
     }
 
-    private fun buildSearchRow(input: EditText, count: TextView): LinearLayout =
-        LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(12), dp(4))
-            visibility = View.GONE
-            addView(
-                input,
-                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-            )
-            addView(
-                count,
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.WRAP_CONTENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { marginStart = dp(12) }
-            )
+    private fun buildClearButton(): ImageView = ImageView(context).apply {
+        setImageResource(R.drawable.debug_overlay_ic_close)
+        setColorFilter(COLOR_HINT)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        val pad = dp(3)
+        setPadding(pad, pad, pad, pad)
+        visibility = View.GONE
+        setOnClickListener {
+            searchInput.setText("")
+            searchInput.requestFocus()
+            showKeyboard(searchInput)
         }
+    }
 
     private fun buildBarIcon(resId: Int): ImageView = ImageView(context).apply {
         setImageResource(resId)
@@ -472,6 +521,11 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         private val COLOR_BUBBLE = 0xCC000000.toInt()
         private const val COLOR_DIVIDER = 0x26FFFFFF
         private val COLOR_BADGE = 0xFFFF3B30.toInt()
+        private val COLOR_SEARCH_FIELD = 0x26FFFFFF
+        private val COLOR_HINT = 0x80FFFFFF.toInt()
+        private val COLOR_MATCH_COUNT = 0xB3FFFFFF.toInt()
+        private val COLOR_NO_MATCH = 0xFFFF6B6B.toInt()
+        private val COLOR_ACCENT = 0xFF4FC3F7.toInt()
         private const val MAX_MESSAGES = 200
     }
 }

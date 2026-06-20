@@ -165,6 +165,21 @@ The library binds a small `Service` and draws the bubble/panel via `WindowManage
 
 ---
 
+## 🧪 Sample app
+
+A runnable sample lives in [`sample/`](sample) — a tiny app with buttons that push messages and events to the overlay so you can try everything, including search.
+
+```bash
+# install & launch on a connected device / emulator
+./gradlew :sample:installDebug
+```
+
+In the app: grant the overlay permission, tap the buttons (e.g. **Log 30 sample events**), open the floating bubble, then tap 🔍 and type to filter/highlight (try `purchase` or `item_1`).
+
+The sample depends on the library by source (`implementation(project(":"))`), so it always reflects your local changes — no publishing needed.
+
+---
+
 ## 🤝 Building & publishing (contributors)
 
 ```bash
