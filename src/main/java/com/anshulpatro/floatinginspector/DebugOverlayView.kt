@@ -9,13 +9,19 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.widget.AbsListView
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
@@ -42,12 +48,16 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
     private val screenHeight: Int
 
     private val listView: ListView
+    private val searchInput: EditText
+    private val matchCount: TextView
+    private val searchRow: LinearLayout
     private val badge: TextView
     private val bubble: FrameLayout
     private val panel: LinearLayout
     private val windowParams: WindowManager.LayoutParams
 
     private var minimised = true
+    private var searchOpen = false
     private var unseenCount = 0
     private var bubbleX: Int
     private var bubbleY: Int
@@ -62,7 +72,10 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         bubbleY = screenHeight - bubbleBox - edgeInset
 
         listView = buildListView()
-        panel = buildPanel(listView)
+        searchInput = buildSearchInput()
+        matchCount = buildMatchCount()
+        searchRow = buildSearchRow(searchInput, matchCount)
+        panel = buildPanel(listView, searchRow)
         badge = buildBadge()
         bubble = buildBubble(badge)
 
@@ -80,7 +93,8 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         while (items.size > MAX_MESSAGES) {
             items.removeAt(0)
         }
-        adapter.notifyDataSetChanged()
+        adapter.refresh()
+        updateMatchCount()
         scrollToBottom()
         if (minimised) {
             unseenCount++
@@ -90,6 +104,23 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
 
     fun hideView() {
         windowManager.removeView(this)
+    }
+
+    /** Closes search first, then collapses the panel, when the user presses Back. */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
+            when {
+                searchOpen -> {
+                    closeSearch()
+                    return true
+                }
+                !minimised -> {
+                    collapse()
+                    return true
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun expand() {
@@ -103,6 +134,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         windowParams.height = ViewGroup.LayoutParams.MATCH_PARENT
         windowParams.x = 0
         windowParams.y = 0
+        windowParams.flags = overlayFlags(focusable = true)
         windowManager.updateViewLayout(this, windowParams)
         scrollToBottom()
     }
@@ -110,13 +142,48 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
     private fun collapse() {
         if (minimised) return
         minimised = true
+        if (searchOpen) closeSearch()
         panel.visibility = View.GONE
         bubble.visibility = View.VISIBLE
         windowParams.width = bubbleBox
         windowParams.height = bubbleBox
         windowParams.x = bubbleX
         windowParams.y = bubbleY
+        windowParams.flags = overlayFlags(focusable = false)
         windowManager.updateViewLayout(this, windowParams)
+    }
+
+    private fun toggleSearch() {
+        if (searchOpen) closeSearch() else openSearch()
+    }
+
+    private fun openSearch() {
+        searchOpen = true
+        searchRow.visibility = View.VISIBLE
+        searchInput.requestFocus()
+        post { showKeyboard(searchInput) }
+    }
+
+    private fun closeSearch() {
+        searchOpen = false
+        searchInput.setText("")     // clears the query via the TextWatcher
+        searchRow.visibility = View.GONE
+        hideKeyboard()
+    }
+
+    private fun applySearch(query: String) {
+        adapter.setQuery(query)
+        updateMatchCount()
+        scrollToBottom()
+    }
+
+    private fun updateMatchCount() {
+        if (adapter.query.isEmpty()) {
+            matchCount.visibility = View.GONE
+        } else {
+            matchCount.visibility = View.VISIBLE
+            matchCount.text = adapter.count.toString()
+        }
     }
 
     @Suppress("DEPRECATION")
@@ -128,14 +195,23 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         }
         return WindowManager.LayoutParams(
             bubbleBox, bubbleBox, type,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            overlayFlags(focusable = false),
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = bubbleX
             y = bubbleY
+            softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
+    }
+
+    /**
+     * The bubble must stay non-focusable so touches pass through to the app behind it; the
+     * expanded panel must be focusable so the search field can receive the soft keyboard.
+     */
+    private fun overlayFlags(focusable: Boolean): Int {
+        val base = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
+        return if (focusable) base else base or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
     }
 
     private fun buildListView(): ListView = ListView(context).apply {
@@ -149,19 +225,27 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         adapter = this@DebugOverlayView.adapter
     }
 
-    private fun buildPanel(list: ListView): LinearLayout = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL
-        setBackgroundColor(COLOR_PANEL)
-        setPadding(0, statusBarHeight, 0, 0)
-        addView(
-            buildTopBar(),
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44))
-        )
-        addView(
-            list,
-            LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
-        )
-    }
+    private fun buildPanel(list: ListView, search: LinearLayout): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(COLOR_PANEL)
+            setPadding(0, statusBarHeight, 0, 0)
+            addView(
+                buildTopBar(),
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44))
+            )
+            addView(
+                search,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
+            )
+            addView(
+                list,
+                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
+            )
+        }
 
     private fun buildTopBar(): LinearLayout {
         val bar = LinearLayout(context).apply {
@@ -170,7 +254,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         }
 
         val title = TextView(context).apply {
-            text = "Analytics Events"
+            text = "Debug Logs"
             setTextColor(Color.WHITE)
             textSize = 14f
             setTypeface(typeface, Typeface.BOLD)
@@ -180,6 +264,10 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
                 marginStart = dp(12)
             }
         bar.addView(title, titleParams)
+
+        val search = buildBarIcon(R.drawable.debug_overlay_ic_search)
+        search.setOnClickListener { toggleSearch() }
+        bar.addView(search, barIconParams(dp(2)))
 
         val minimise = buildBarIcon(R.drawable.debug_overlay_ic_arrow_down)
         minimise.setOnClickListener { collapse() }
@@ -191,6 +279,61 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
 
         return bar
     }
+
+    private fun buildSearchInput(): EditText = EditText(context).apply {
+        hint = "Search logs"
+        setHintTextColor(0x80FFFFFF.toInt())
+        setTextColor(Color.WHITE)
+        textSize = 13f
+        setSingleLine()
+        setBackgroundColor(Color.TRANSPARENT)
+        val padV = dp(6)
+        setPadding(0, padV, 0, padV)
+        imeOptions = EditorInfo.IME_ACTION_SEARCH
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        }
+        setOnEditorActionListener { _, actionId, _ ->
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                hideKeyboard()
+                true
+            } else {
+                false
+            }
+        }
+        addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                applySearch(s?.toString().orEmpty())
+            }
+        })
+    }
+
+    private fun buildMatchCount(): TextView = TextView(context).apply {
+        setTextColor(0xB3FFFFFF.toInt())
+        textSize = 12f
+        visibility = View.GONE
+    }
+
+    private fun buildSearchRow(input: EditText, count: TextView): LinearLayout =
+        LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(12), 0, dp(12), dp(4))
+            visibility = View.GONE
+            addView(
+                input,
+                LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            )
+            addView(
+                count,
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { marginStart = dp(12) }
+            )
+        }
 
     private fun buildBarIcon(resId: Int): ImageView = ImageView(context).apply {
         setImageResource(resId)
@@ -286,6 +429,16 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
             }
             return false
         }
+    }
+
+    private fun showKeyboard(view: View) {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.showSoftInput(view, InputMethodManager.SHOW_IMPLICIT)
+    }
+
+    private fun hideKeyboard() {
+        val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+        imm.hideSoftInputFromWindow(windowToken, 0)
     }
 
     private fun updateBadge() {

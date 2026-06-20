@@ -143,7 +143,8 @@ All `log(...)` overloads return the same instance, so calls can be chained.
 
 - A **draggable floating bubble** with a badge counting unseen messages.
 - **Tap it** → a scrollable, auto-scrolling panel showing each message (name in bold + `HH:mm:ss.SSS`, parameters as `key = value`). Keeps the most recent **200** messages.
-- **Minimize** returns to the bubble; **Close** stops the overlay.
+- **🔍 Search** — tap the search icon in the panel to filter entries by any text (case-insensitive); matches are highlighted and a live count of matching entries is shown.
+- **Minimize** returns to the bubble; **Close** stops the overlay. Pressing **Back** closes search, then collapses the panel.
 
 <!-- Tip: drop a demo GIF/screenshot here, e.g. ![demo](docs/demo.gif) -->
 
