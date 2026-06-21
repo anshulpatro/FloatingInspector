@@ -1,6 +1,8 @@
 package com.anshulpatro.floatinginspector
 
 import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -9,6 +11,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.os.Bundle
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.Gravity
@@ -59,12 +62,40 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
     private val bubble: FrameLayout
     private val panel: LinearLayout
     private val windowParams: WindowManager.LayoutParams
+    private val application = context.applicationContext as? Application
 
     private var minimised = true
     private var searchOpen = false
     private var unseenCount = 0
     private var bubbleX: Int
     private var bubbleY: Int
+    private var startedActivities = 1
+
+    /**
+     * Collapses the panel back to the bubble when the host app leaves the foreground, so the
+     * expanded overlay doesn't cover the whole screen over the launcher or another app.
+     */
+    private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
+        override fun onActivityStarted(activity: Activity) {
+            startedActivities++
+        }
+
+        override fun onActivityStopped(activity: Activity) {
+            startedActivities--
+            // Deferred + guarded so in-app activity transitions and configuration changes
+            // (e.g. rotation) don't look like the app going to the background.
+            if (activity.isChangingConfigurations) return
+            postDelayed({
+                if (startedActivities <= 0 && !minimised) collapse()
+            }, BACKGROUND_GRACE_MS)
+        }
+
+        override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {}
+        override fun onActivityResumed(activity: Activity) {}
+        override fun onActivityPaused(activity: Activity) {}
+        override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
+        override fun onActivityDestroyed(activity: Activity) {}
+    }
 
     init {
         val size = Point()
@@ -93,6 +124,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
 
         windowParams = buildWindowParams()
         windowManager.addView(this, windowParams)
+        application?.registerActivityLifecycleCallbacks(lifecycleCallbacks)
     }
 
     fun addMessage(msg: String) {
@@ -114,6 +146,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
     }
 
     fun hideView() {
+        application?.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
         windowManager.removeView(this)
     }
 
@@ -261,10 +294,15 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(COLOR_PANEL)
-            setPadding(0, statusBarHeight, 0, 0)
+            // The overlay window already lays out below the status bar; a small top inset keeps the
+            // title off the status-bar edge without wasting a full statusBarHeight band.
+            setPadding(0, dp(8), 0, 0)
             addView(
                 buildTopBar(),
-                LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(44))
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                )
             )
             addView(
                 search,
@@ -283,19 +321,21 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         val bar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(2), dp(4), dp(2))
         }
 
         val title = TextView(context).apply {
-            text = "Debug Logs"
+            text = "Floating Inspector"
             setTextColor(Color.WHITE)
-            textSize = 14f
+            textSize = 16f
             setTypeface(typeface, Typeface.BOLD)
         }
-        val titleParams =
+        bar.addView(
+            title,
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                marginStart = dp(12)
+                marginStart = dp(8)
             }
-        bar.addView(title, titleParams)
+        )
 
         searchIcon.setOnClickListener { toggleSearch() }
         bar.addView(searchIcon, barIconParams(dp(2)))
@@ -306,7 +346,7 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
 
         val close = buildBarIcon(R.drawable.debug_overlay_ic_close)
         close.setOnClickListener { onClose?.invoke() }
-        bar.addView(close, barIconParams(dp(12)))
+        bar.addView(close, barIconParams(dp(8)))
 
         return bar
     }
@@ -560,5 +600,6 @@ internal class DebugOverlayView(context: Context) : FrameLayout(context) {
         private val COLOR_NO_MATCH = 0xFFFF6B6B.toInt()
         private val COLOR_ACCENT = 0xFF4FC3F7.toInt()
         private const val MAX_MESSAGES = 200
+        private const val BACKGROUND_GRACE_MS = 400L
     }
 }
