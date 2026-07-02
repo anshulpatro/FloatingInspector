@@ -24,7 +24,7 @@ class DebugOverlay private constructor(context: Context) {
         val serviceConnection = object : ServiceConnection {
             override fun onServiceConnected(name: ComponentName?, binder: IBinder) {
                 val service = (binder as DebugOverlayService.DebugOverlayServiceBinder).service
-                messageDispatcher.setService(service)
+                messageDispatcher.setSink(service::logMsg)
             }
 
             override fun onServiceDisconnected(name: ComponentName?) {
@@ -63,45 +63,54 @@ class DebugOverlay private constructor(context: Context) {
         return log(sb.toString())
     }
 
-    private class MessageDispatcher {
+    internal class MessageDispatcher {
 
-        private var service: DebugOverlayService? = null
+        // log() may be called from any thread while setSink() drains the queue on the
+        // main thread, so all access to `sink` and `messageQueue` is guarded by `this`.
+        private var sink: ((String) -> Unit)? = null
         private val messageQueue: Queue<String> = LinkedList()
         private val mainThreadHandler = Handler(Looper.getMainLooper())
 
-        fun setService(service: DebugOverlayService) {
-            this.service = service
-            for (msg in messageQueue) {
-                dispatchOnMainUiThread(msg)
+        fun setSink(sink: (String) -> Unit) {
+            val pending: List<String>
+            synchronized(this) {
+                this.sink = sink
+                pending = ArrayList(messageQueue)
+                messageQueue.clear()
+            }
+            for (msg in pending) {
+                dispatchOnMainUiThread(sink, msg)
             }
         }
 
         fun enqueueMessage(msg: String) {
-            if (service != null) {
-                dispatchOnMainUiThread(msg)
-            } else {
-                messageQueue.add(msg)
+            val sink = synchronized(this) {
+                sink ?: run {
+                    messageQueue.add(msg)
+                    return
+                }
             }
+            dispatchOnMainUiThread(sink, msg)
         }
 
-        private fun dispatchOnMainUiThread(message: String) {
-            val service = this.service ?: throw NullPointerException(
-                DebugOverlayService::class.java.simpleName + " is null, but this should never be the case"
-            )
+        private fun dispatchOnMainUiThread(sink: (String) -> Unit, message: String) {
             if (Looper.myLooper() == Looper.getMainLooper()) {
-                service.logMsg(message)
+                sink(message)
             } else {
-                mainThreadHandler.post { service.logMsg(message) }
+                mainThreadHandler.post { sink(message) }
             }
         }
     }
 
     companion object {
 
+        @Volatile
         private var INSTANCE: DebugOverlay? = null
 
         @JvmStatic
         fun with(context: Context): DebugOverlay =
-            INSTANCE ?: DebugOverlay(context.applicationContext).also { INSTANCE = it }
+            INSTANCE ?: synchronized(this) {
+                INSTANCE ?: DebugOverlay(context.applicationContext).also { INSTANCE = it }
+            }
     }
 }
