@@ -35,8 +35,8 @@ Use the real overlay in debug builds and the **no-op** artifact in release build
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    debugImplementation("com.anshulpatro:floatinginspector:0.2.0")
-    releaseImplementation("com.anshulpatro:floatinginspector-noop:0.2.0")
+    debugImplementation("com.anshulpatro:floatinginspector:0.2.1")
+    releaseImplementation("com.anshulpatro:floatinginspector-noop:0.2.1")
 }
 ```
 
@@ -46,15 +46,15 @@ dependencies {
 ```groovy
 // app/build.gradle
 dependencies {
-    debugImplementation 'com.anshulpatro:floatinginspector:0.2.0'
-    releaseImplementation 'com.anshulpatro:floatinginspector-noop:0.2.0'
+    debugImplementation 'com.anshulpatro:floatinginspector:0.2.1'
+    releaseImplementation 'com.anshulpatro:floatinginspector-noop:0.2.1'
 }
 ```
 </details>
 
 `floatinginspector-noop` has exactly the same API, so your `DebugOverlay` calls compile unchanged, but every call returns immediately. It ships **no service, no `SYSTEM_ALERT_WINDOW` permission, no resources and no dependencies**, so none of the overlay ends up in your release APK or its manifest. Always use the same version for both artifacts.
 
-> Got more build types or flavors? Add the matching configuration for each one, e.g. `stagingImplementation(...)` with whichever artifact that build should get. If you'd rather ship one artifact everywhere, `implementation("com.anshulpatro:floatinginspector:0.2.0")` still works. Then guard your calls with `BuildConfig.DEBUG` (see below).
+> Got more build types or flavors? Add the matching configuration for each one, e.g. `stagingImplementation(...)` with whichever artifact that build should get. If you'd rather ship one artifact everywhere, `implementation("com.anshulpatro:floatinginspector:0.2.1")` still works. Then guard your calls with `BuildConfig.DEBUG` (see below).
 
 | | |
 |---|---|

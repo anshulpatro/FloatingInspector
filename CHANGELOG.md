@@ -2,6 +2,13 @@
 
 Both artifacts, `floatinginspector` and `floatinginspector-noop`, are always released together at the same version.
 
+## 0.2.1
+
+No library or API changes since 0.2.0.
+
+### Changed
+- Built with Gradle 9.4.1 (was 8.13). The bytecode target (Java 8) and the public API are unchanged.
+
 ## 0.2.0
 
 ### Added

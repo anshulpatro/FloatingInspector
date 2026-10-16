@@ -82,6 +82,6 @@ click **Publish** in the Central Portal UI.
 
 ```groovy
 // mavenCentral() is already in every Android project — no extra repository needed
-debugImplementation 'com.anshulpatro:floatinginspector:0.2.0'
-releaseImplementation 'com.anshulpatro:floatinginspector-noop:0.2.0'
+debugImplementation 'com.anshulpatro:floatinginspector:0.2.1'
+releaseImplementation 'com.anshulpatro:floatinginspector-noop:0.2.1'
 ```
