@@ -6,7 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.BaseAdapter
 
-abstract class SimpleAdapter<D>(protected val context: Context) : BaseAdapter() {
+internal abstract class SimpleAdapter<D>(protected val context: Context) : BaseAdapter() {
 
     protected var inflater: LayoutInflater =
         context.getSystemService(Context.LAYOUT_INFLATER_SERVICE) as LayoutInflater

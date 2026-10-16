@@ -15,7 +15,7 @@ A tiny, debug-only **floating overlay for printing live debug messages on-device
 - **Zero dependencies** — pure Android framework, nothing transitive added to your app.
 - **One line to integrate** — a normal Gradle `implementation`. No Gradle plugin, no `init()`.
 - **See state on the device** — great for QA, on-device demos, physical devices without a cable, or any flow that's awkward to inspect in logcat.
-- **Tiny & passive** — does nothing until you call it; easy to keep out of release builds.
+- **Tiny & passive** — does nothing until you call it, and a **no-op artifact** keeps it out of release builds entirely.
 
 ---
 
@@ -30,10 +30,13 @@ mavenCentral()
 
 ### 2. Add the dependency
 
+Use the real overlay in debug builds and the **no-op** artifact in release builds:
+
 ```kotlin
 // app/build.gradle.kts
 dependencies {
-    implementation("com.anshulpatro:floatinginspector:0.1.1")
+    debugImplementation("com.anshulpatro:floatinginspector:0.2.0")
+    releaseImplementation("com.anshulpatro:floatinginspector-noop:0.2.0")
 }
 ```
 
@@ -43,16 +46,21 @@ dependencies {
 ```groovy
 // app/build.gradle
 dependencies {
-    implementation 'com.anshulpatro:floatinginspector:0.1.1'
+    debugImplementation 'com.anshulpatro:floatinginspector:0.2.0'
+    releaseImplementation 'com.anshulpatro:floatinginspector-noop:0.2.0'
 }
 ```
 </details>
 
+`floatinginspector-noop` has exactly the same API, so your `DebugOverlay` calls compile unchanged, but every call returns immediately. It ships **no service, no `SYSTEM_ALERT_WINDOW` permission, no resources and no dependencies**, so none of the overlay ends up in your release APK or its manifest. Always use the same version for both artifacts.
+
+> Got more build types or flavors? Add the matching configuration for each one, e.g. `stagingImplementation(...)` with whichever artifact that build should get. If you'd rather ship one artifact everywhere, `implementation("com.anshulpatro:floatinginspector:0.2.0")` still works. Then guard your calls with `BuildConfig.DEBUG` (see below).
+
 | | |
 |---|---|
 | **minSdk** | 23+ |
-| **Dependencies** | none |
-| **Recommended build type** | debuggable (guard your calls behind `BuildConfig.DEBUG`) |
+| **Dependencies** | none (only the Kotlin stdlib your app already has) |
+| **Release builds** | `floatinginspector-noop` — same API, does nothing |
 
 ---
 
@@ -96,7 +104,9 @@ Calls are chainable and **thread-safe** — `log()` always dispatches to the mai
 
 ### Keep it out of release builds
 
-Nothing is auto-gated, so guard your calls:
+With the `debugImplementation` / `releaseImplementation` setup above, there's nothing to do: release builds get the no-op and your calls do nothing.
+
+One thing the no-op can't skip is building the arguments at your call site. String templates and `bundleOf(...)` still run before the empty `log()` is called. That's negligible for occasional messages; for hot paths (per-frame, tight loops), or if you ship the real artifact in every build, guard the call:
 
 ```kotlin
 if (BuildConfig.DEBUG) {
@@ -137,6 +147,8 @@ fun Context.logEvent(name: String, params: Bundle? = null) {
 
 All `log(...)` overloads return the same instance, so calls can be chained.
 
+`floatinginspector-noop` exposes this exact API, down to parameter names. In the no-op, `with()` ignores the context and never throws, and `log(...)` never formats its arguments.
+
 ---
 
 ## 👀 What you'll see
@@ -160,8 +172,11 @@ The library binds a small `Service` and draws the bubble/panel via `WindowManage
 
 **Overlay shows nothing?** Check, in order:
 
-1. The **"Display over other apps"** permission is granted (`Settings.canDrawOverlays(context)` returns `true`).
-2. You're actually calling `DebugOverlay.with(context).log(...)` (and not behind a `BuildConfig.DEBUG` guard in a release build).
+1. You're running a build that uses `floatinginspector`, not `floatinginspector-noop` (with the recommended setup, that means a **debug** build).
+2. The **"Display over other apps"** permission is granted (`Settings.canDrawOverlays(context)` returns `true`).
+3. You're actually calling `DebugOverlay.with(context).log(...)` (and not behind a `BuildConfig.DEBUG` guard in a release build).
+
+**Duplicate class `com.anshulpatro.floatinginspector.DebugOverlay`?** Both artifacts ended up in the same build variant. Each variant should get exactly one of them; check for a plain `implementation(...)` alongside the `debug`/`release` lines.
 
 ---
 
@@ -176,23 +191,30 @@ A runnable sample lives in [`sample/`](sample) — a tiny app with buttons that 
 
 In the app: grant the overlay permission, tap the buttons (e.g. **Log 30 sample events**), open the floating bubble, then tap 🔍 and type to filter/highlight (try `purchase` or `item_1`).
 
-The sample depends on the library by source (`implementation(project(":"))`), so it always reflects your local changes — no publishing needed.
+The sample depends on the library by source, so it always reflects your local changes — no publishing needed. It uses the recommended setup: the real library (`:`) in debug and the no-op (`:noop`) in release, so `./gradlew :sample:installRelease` shows that nothing appears in release builds.
 
 ---
 
 ## 🤝 Building & publishing (contributors)
 
+The repo has two published modules: the real library at the root and the no-op in [`noop/`](noop).
+
 ```bash
-# Build + run a local install into ~/.m2
+# Everything CI runs: lint, unit tests, API checks, sample manifest checks
+./gradlew check :sample:assembleDebug :sample:assembleRelease
+
+# Build + run a local install of both artifacts into ~/.m2
 ./gradlew publishToMavenLocal
 
 # Publish a release to Maven Central (maintainers; requires credentials + signing key)
 ./gradlew publishToMavenCentral --no-configuration-cache
 ```
 
-The build is pinned to **JDK 17** via [`gradle/gradle-daemon-jvm.properties`](gradle/gradle-daemon-jvm.properties), so the Gradle daemon uses JDK 17 regardless of your shell's default JDK. CI publishes automatically when a `v*` tag is pushed — see [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
+**Changing the public API?** Make the same change in both `DebugOverlay.kt` files (root `src/` and `noop/src/`), then run `./gradlew apiDump` and commit the updated `api/*.api` files. `check` fails if a dump is stale (`apiCheck`), if the two modules' APIs differ (`checkNoopApiParity`), or if the sample's [`ApiContract.kt`](sample/src/main/java/com/anshulpatro/floatinginspector/sample/ApiContract.kt) stops compiling against either module. That last check catches renamed parameters.
 
-To cut a release: bump `VERSION_NAME` in [`gradle.properties`](gradle.properties), commit, then `git tag vX.Y.Z && git push --tags`. (Maven Central versions are immutable — always bump.)
+The build is pinned to **JDK 17** via [`gradle/gradle-daemon-jvm.properties`](gradle/gradle-daemon-jvm.properties), so the Gradle daemon uses JDK 17 regardless of your shell's default JDK. CI runs on every push and pull request ([`ci.yml`](.github/workflows/ci.yml)) and publishes both artifacts when a `v*` tag is pushed ([`publish.yml`](.github/workflows/publish.yml)).
+
+To cut a release: bump `VERSION_NAME` in [`gradle.properties`](gradle.properties) (it versions both artifacts), update [`CHANGELOG.md`](CHANGELOG.md), commit, then `git tag vX.Y.Z && git push --tags`. (Maven Central versions are immutable — always bump.)
 
 ---
 

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Intentionally empty: unlike the real library, the no-op declares no SYSTEM_ALERT_WINDOW
+  permission and no service, so neither ends up in a release build's merged manifest.
+-->
+<manifest />

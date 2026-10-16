@@ -4,7 +4,8 @@
     <!--
       Note: SYSTEM_ALERT_WINDOW is declared by the FloatingInspector library and merged
       in automatically — the sample does not declare it, demonstrating that consumers
-      don't have to.
+      don't have to. Release builds use floatinginspector-noop, which declares nothing,
+      so the permission only appears in debug builds.
     -->
 
     <application

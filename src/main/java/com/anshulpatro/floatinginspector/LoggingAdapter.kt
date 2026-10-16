@@ -13,7 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 
-class LoggingAdapter(context: Context) : SimpleAdapter<String>(context) {
+internal class LoggingAdapter(context: Context) : SimpleAdapter<String>(context) {
 
     /** Current search query; empty means "no search active". */
     var query: String = ""

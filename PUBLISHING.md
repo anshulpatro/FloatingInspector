@@ -1,8 +1,16 @@
 # Publishing FloatingInspector to Maven Central
 
 Publishing uses the [vanniktech maven-publish plugin](https://github.com/vanniktech/gradle-maven-publish-plugin)
-(configured in `build.gradle.kts`) and Sonatype's **Central Portal**. Coordinate comes from
-`gradle.properties`: `GROUP` / `ARTIFACT_ID` / `VERSION_NAME` → **`com.anshulpatro:floatinginspector:0.1.0`**.
+and Sonatype's **Central Portal**. Every release publishes **two artifacts at the same version**:
+
+| Module | Coordinate | `POM_ARTIFACT_ID` set in |
+|---|---|---|
+| root (`:`) | `com.anshulpatro:floatinginspector` | `gradle.properties` |
+| `:noop` | `com.anshulpatro:floatinginspector-noop` | `noop/gradle.properties` |
+
+Coordinates, POM metadata and the Central Portal target (`SONATYPE_HOST`, `SONATYPE_AUTOMATIC_RELEASE`)
+all come from `gradle.properties`. `GROUP` and `VERSION_NAME` are shared, so the two artifacts can't
+drift apart in version.
 
 > Build with JDK 17 or 21: `export JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home"`
 
@@ -44,15 +52,23 @@ signingInMemoryKeyPassword=<your gpg key passphrase>
 
 ## Cut a release
 
-1. Bump `VERSION_NAME` in `gradle.properties` (e.g. `0.1.0` → `0.1.1`).
-2. Publish:
+1. Bump `VERSION_NAME` in `gradle.properties` (e.g. `0.1.0` → `0.1.1`) and update `CHANGELOG.md`.
+2. Verify everything first. The two artifacts are uploaded and released as **separate deployments**,
+   so a failure halfway through can leave one version live without the other, and Central versions
+   can't be replaced:
+   ```bash
+   ./gradlew check :sample:assembleDebug :sample:assembleRelease
+   ```
+3. Publish:
    ```bash
    ./gradlew publishAndReleaseToMavenCentral --no-configuration-cache
    ```
-   This builds the AAR + sources + javadoc jars, signs them, uploads to the Central Portal, and
-   (because `automaticRelease = true`) releases automatically once validation passes. It appears on
-   Maven Central a few minutes later.
-3. Tag the release in git:
+   This builds each module's AAR + sources + javadoc jars, signs them, uploads them to the Central
+   Portal, and (because `SONATYPE_AUTOMATIC_RELEASE=true`) releases each one automatically once
+   validation passes. They appear on Maven Central a few minutes later. Check that both
+   `floatinginspector` and `floatinginspector-noop` show up at the new version; if only one does,
+   re-run the publish for the missing module (e.g. `:noop:publishAndReleaseToMavenCentral`).
+4. Tag the release in git:
    ```bash
    git tag 0.1.0 && git push origin 0.1.0
    ```
@@ -66,5 +82,6 @@ click **Publish** in the Central Portal UI.
 
 ```groovy
 // mavenCentral() is already in every Android project — no extra repository needed
-implementation 'com.anshulpatro:floatinginspector:0.1.0'
+debugImplementation 'com.anshulpatro:floatinginspector:0.2.0'
+releaseImplementation 'com.anshulpatro:floatinginspector-noop:0.2.0'
 ```

@@ -1,0 +1,12 @@
+public final class com/anshulpatro/floatinginspector/DebugOverlay {
+	public static final field Companion Lcom/anshulpatro/floatinginspector/DebugOverlay$Companion;
+	public final fun log (Ljava/lang/String;)Lcom/anshulpatro/floatinginspector/DebugOverlay;
+	public final fun log (Ljava/lang/String;Landroid/os/Bundle;)Lcom/anshulpatro/floatinginspector/DebugOverlay;
+	public final fun log (Ljava/lang/String;[Ljava/lang/Object;)Lcom/anshulpatro/floatinginspector/DebugOverlay;
+	public static final fun with (Landroid/content/Context;)Lcom/anshulpatro/floatinginspector/DebugOverlay;
+}
+
+public final class com/anshulpatro/floatinginspector/DebugOverlay$Companion {
+	public final fun with (Landroid/content/Context;)Lcom/anshulpatro/floatinginspector/DebugOverlay;
+}
+

@@ -5,7 +5,7 @@ import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
 
-class DebugOverlayService : Service() {
+internal class DebugOverlayService : Service() {
 
     private val binder = DebugOverlayServiceBinder(this)
     private var view: DebugOverlayView? = null
